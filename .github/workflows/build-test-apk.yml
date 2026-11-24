@@ -1,0 +1,160 @@
+name: build-test-apk
+
+# Compila un APK instalable del launcher + runtime Bionic para probar cambios
+# (por ejemplo, la vibracion de mandos) sin depender de un PC Linux.
+#
+# - workflow_dispatch: se lanza a mano desde Actions o con `gh workflow run`.
+# - Publica los APK como pre-release "apk-test-<n>" para descargarlos desde el telefono.
+# - Firma: build_release_apk.sh genera una clave de desarrollo local si no hay secretos.
+#
+# El APK release sustituye a la app oficial (misma applicationId): hay que desinstalar
+# antes y se pierden los datos. El APK debug usa applicationId .debug y convive con ella.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-test-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  ANDROID_PLATFORM: '35'
+  ANDROID_BUILD_TOOLS: '35.0.0'
+  GOW3_BUILD_TYPE: Release
+
+jobs:
+  apk:
+    name: Build installable arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up native dependency environment
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: ci/environment.yml
+          cache-environment: true
+          init-shell: bash
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-${{ env.ANDROID_PLATFORM }}
+            build-tools;${{ env.ANDROID_BUILD_TOOLS }}
+
+      - name: Install NDK r29, CMake and SDK platform 37
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "ndk;29.0.14206865" "cmake;3.22.1" >/dev/null
+          # compileSdk 37 (AGP 9.3.3): instalarlo explicitamente evita depender
+          # del auto-download de Gradle. Si no estuviera en el canal, Gradle lo intenta igual.
+          sdkmanager --install "platforms;android-37" >/dev/null 2>&1 || \
+            echo "platforms;android-37 no disponible en sdkmanager; Gradle lo resolvera"
+          test -f "$sdk/ndk/29.0.14206865/build/cmake/android.toolchain.cmake"
+          echo "GOW3_NDK=$sdk/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "GOW3_ANDROID_SDK=$sdk" >> "$GITHUB_ENV"
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang lld llvm cmake ninja-build meson pkg-config patchelf ccache \
+            libxml2-utils unzip xz-utils zstd
+
+      - name: Restore reproducible build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .local-deps/android/src
+            .local-deps/android/m2
+            .local-deps/android/steam-libs
+            ~/.cache/ccache
+            ~/.gradle/caches
+          key: apk-${{ runner.os }}-${{ hashFiles('tools/android/**', 'cpu/**', 'gpu/CMakeLists.txt', 'gpu/third_party/**', 'ci/**') }}
+          restore-keys: apk-${{ runner.os }}-
+
+      - name: Build pinned host dependencies
+        shell: bash -el {0}
+        run: bash ci/setup-deps.sh "$CONDA_PREFIX"
+
+      - name: Fetch Steam libraries
+        shell: bash
+        run: bash tools/android/inputs/fetch_steam_libs.sh
+
+      - name: Build the Bionic runtime
+        shell: bash -el {0}
+        run: |
+          bash tools/android/build_bionic_deps.sh
+          bash tools/android/build_bionic.sh
+
+      - name: Build debug APK (side-by-side install, debug signature)
+        shell: bash -el {0}
+        run: |
+          bash tools/android/debug/stage_bionic_runtime.sh
+          android-launcher/gradlew -p android-launcher :app:assembleDebug
+          mkdir -p out/apk
+          cp android-launcher/app/build/outputs/apk/debug/*.apk out/apk/GodOfWar3-debug.apk
+          sha256sum out/apk/GodOfWar3-debug.apk > out/apk/GodOfWar3-debug.apk.sha256
+
+      - name: Build release APK (dev-key signed)
+        shell: bash -el {0}
+        run: |
+          bash tools/android/apk/build_release_apk.sh
+          cp "out/release/God of War III-bionic-"*.apk out/apk/GodOfWar3-release-devkey.apk
+          sha256sum out/apk/GodOfWar3-release-devkey.apk > out/apk/GodOfWar3-release-devkey.apk.sha256
+          ls -lh out/apk
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gow3-apk-${{ github.sha }}
+          path: |
+            out/apk/*.apk
+            out/apk/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish test pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-test-${{ github.run_number }}
+          name: "APK de prueba #${{ github.run_number }} (${{ github.sha }})"
+          prerelease: true
+          body: |
+            Build de prueba con los cambios de la rama `${{ github.ref_name }}` (incluye la
+            vibracion de mandos). Firmado con clave de desarrollo: no es la app oficial.
+
+            - `GodOfWar3-debug.apk`: se instala junto a la app oficial (paquete `.debug`).
+            - `GodOfWar3-release-devkey.apk`: mismo paquete que la oficial; desinstala antes
+              (se pierden los datos/saves de la app).
+
+            Prueba: Ajustes -> Button mapping -> "Test vibration", o menu en juego ->
+            Controls -> "Test vibration".
+          files: |
+            out/apk/*.apk
+            out/apk/*.sha256
