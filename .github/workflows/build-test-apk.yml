@@ -78,6 +78,7 @@ jobs:
           path: |
             .local-deps/android/src
             .local-deps/android/m2
+            .local-deps/android/maven
             .local-deps/android/steam-libs
             ~/.cache/ccache
             ~/.gradle/caches
@@ -131,7 +132,18 @@ jobs:
           # fetch_steam_libs.sh asume que .local-deps/android existe (en el CI del
           # upstream lo restaura la cache); en un runner limpio hay que crearlo.
           mkdir -p .local-deps/android
-          bash tools/android/inputs/fetch_steam_libs.sh
+          # La resolucion del plugin de Maven ha fallado de forma intermitente en
+          # runners limpios (NoPluginFoundForPrefix); se reintenta con repo local limpio.
+          for attempt in 1 2 3; do
+            if bash tools/android/inputs/fetch_steam_libs.sh; then
+              exit 0
+            fi
+            echo "Steam fetch failed (attempt $attempt/3); retrying with a clean local repo" >&2
+            rm -rf .local-deps/android/m2
+            sleep 10
+          done
+          echo "Steam libraries could not be fetched; the debug APK will use the stub." >&2
+          exit 0
 
       - name: Verify the NDK toolchain can link
         shell: bash -el {0}
@@ -177,6 +189,9 @@ jobs:
           sha256sum out/apk/GodOfWar3-debug.apk > out/apk/GodOfWar3-debug.apk.sha256
 
       - name: Build release APK (dev-key signed)
+        # Se omite si las librerias Steam no se pudieron bajar: build_release_apk.sh
+        # las exige, pero el APK debug (stub) ya cubre la prueba de vibracion.
+        if: ${{ hashFiles('.local-deps/android/steam-libs/jars.txt') != '' }}
         shell: bash -el {0}
         run: |
           bash tools/android/apk/build_release_apk.sh
@@ -206,7 +221,8 @@ jobs:
 
             - `GodOfWar3-debug.apk`: se instala junto a la app oficial (paquete `.debug`).
             - `GodOfWar3-release-devkey.apk`: mismo paquete que la oficial; desinstala antes
-              (se pierden los datos/saves de la app).
+              (se pierden los datos/saves de la app). Puede faltar si el runner no pudo bajar
+              las librerias de Steam en ese intento.
 
             Prueba: Ajustes -> Button mapping -> "Test vibration", o menu en juego ->
             Controls -> "Test vibration".
