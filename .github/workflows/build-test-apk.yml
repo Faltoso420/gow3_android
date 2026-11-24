@@ -148,10 +148,21 @@ jobs:
       - name: Build the Bionic runtime
         shell: bash -el {0}
         run: |
+          # FFmpeg's configure toma CFLAGS/CPPFLAGS/LDFLAGS del entorno y, con el env de
+          # conda activo, puede heredar rutas/flags del compilador x86_64 del host y romper
+          # el enlace cruzado a arm64 (C compiler test failed). El cruce ya lleva sus flags
+          # por tanda de argumentos; aqui se limpian los del host.
+          unset CFLAGS CPPFLAGS CXXFLAGS LDFLAGS LIBRARY_PATH
           if ! bash tools/android/build_bionic_deps.sh; then
-            echo "=== build_bionic_deps failed; ffmpeg configure log ==="
-            log=$(find . -path '*bld/ffmpeg/ffbuild/config.log' | head -1)
-            [ -n "$log" ] && tail -150 "$log" || true
+            f=.local-deps/android/bionic-build/ffmpeg
+            echo "=== ffmpeg configure output ==="
+            tail -80 "$f/ffmpeg-configure.log" 2>&1 || true
+            echo "=== ffbuild/config.log (head) ==="
+            head -100 "$f/ffbuild/config.log" 2>&1 || true
+            echo "=== ffbuild/config.log (tail) ==="
+            tail -100 "$f/ffbuild/config.log" 2>&1 || true
+            echo "=== build environment (flags/compilers) ==="
+            env | grep -Ei 'flags|(^|_)cc=|cxx|ld_|conda|path=' || true
             exit 1
           fi
           bash tools/android/build_bionic.sh
