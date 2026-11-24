@@ -6,6 +6,11 @@
 # 归因：本脚本是对 Bloodborne-Android（BB）tools/android/build_bionic_deps.sh 的 gow3 移植版，
 #       NDK 依赖版本、构建参数与 BB 保持一致，便于逐 commit 对照。
 set -euo pipefail
+# conda-forge 编译器 activation 会导出宿主（x86_64）的 CFLAGS/CPPFLAGS/LDFLAGS
+# （-march=nocona -mtune=haswell ...），与 aarch64 交叉编译器不兼容（clang 报
+# unsupported argument 'nocona'）。cmake 侧由 android.toolchain.cmake 覆盖，但
+# ffmpeg configure 会直接读环境变量，必须先清空再交叉编译。
+unset CFLAGS CPPFLAGS LDFLAGS CXXFLAGS
 cd -- "$(dirname -- "$0")/../.."
 root=$PWD/.local-deps/android
 
@@ -114,9 +119,10 @@ if [[ ! -f $prefix/.done-ffmpeg ]]; then
     "$src/ffmpeg-7.1.5/configure" --prefix="$prefix" --enable-cross-compile --target-os=android --arch=aarch64 \
         --cc="$tc/bin/aarch64-linux-android$api-clang" --cxx="$tc/bin/aarch64-linux-android$api-clang++" \
         --ar="$tc/bin/llvm-ar" --ranlib="$tc/bin/llvm-ranlib" --strip="$tc/bin/llvm-strip" --nm="$tc/bin/llvm-nm" \
+        --sysroot="$tc/sysroot" \
         --enable-static --disable-shared --enable-pic --disable-programs --disable-doc --disable-debug \
         --disable-avdevice --disable-avfilter --disable-network --disable-autodetect --disable-mediacodec --disable-jni >"$bld/ffmpeg-configure.log" 2>&1 \
-        || { tail -30 "$bld/ffmpeg-configure.log" >&2; exit 1; }
+        || { tail -40 "$bld/ffmpeg/ffbuild/config.log" >&2 2>/dev/null || true; tail -30 "$bld/ffmpeg-configure.log" >&2; exit 1; }
     run make -j"$J" >"$bld/ffmpeg.log" 2>&1 || { tail -30 "$bld/ffmpeg.log" >&2; exit 1; }
     make install >/dev/null
     # configure 的 Android 目标会为 MediaCodec/JNI 链接 libandroid/libmediandk，这里都禁用了。
