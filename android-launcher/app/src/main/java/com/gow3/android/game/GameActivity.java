@@ -317,6 +317,16 @@ public final class GameActivity extends Activity implements SaveDialogHost {
         });
         // 「Swap Square/Triangle」行已删除(add-pad-button-mapping):该特例开关被完整的
         // 按键映射取代,需要修正印刷标签的玩家在设置 → 操作里自行绑定方块/三角。
+        // 振动自检：和游戏内震动走同一条 GamepadRumble 路径，用来确认手柄马达是否被 Android 暴露。
+        menuItem("ic_gamepad","Test vibration","Buzzes the connected gamepad",() -> {
+            closeDrawer();
+            if (!pad.testRumble())
+                android.widget.Toast.makeText(this,
+                    Build.VERSION.SDK_INT >= 31
+                        ? "No gamepad with vibration found. Use Native/HID mode (not G-Touch)."
+                        : "Controller vibration needs Android 12 or newer.",
+                    android.widget.Toast.LENGTH_LONG).show();
+        });
         menuItem("ic_edit","Edit controller layout","Drag and resize the buttons",() -> {
             prefs.setControllerOverlayEnabled(true);
             closeDrawer();
@@ -937,7 +947,7 @@ public final class GameActivity extends Activity implements SaveDialogHost {
         Gow3Present.stop();
     }
     @Override protected void onDestroy() {
-        destroyed=true; pad.reset(); audio.stop(); main.removeCallbacksAndMessages(null);
+        destroyed=true; pad.reset(); pad.closeRumble(); audio.stop(); main.removeCallbacksAndMessages(null);
         if (saveDialog!=null) saveDialog.stop();
         // 性能 HUD 先于其余清理停止采样线程（spec「退出游戏停止采样」），对照 controllerOverlay.release() 先例。
         if (perfHud!=null) perfHud.release();

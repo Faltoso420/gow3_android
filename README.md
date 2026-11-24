@@ -111,6 +111,10 @@ available yet.
   connects to Adreno GPUs through Turnip.
 - **Kotlin / Compose launcher** (`android-launcher/`): installs the runtime with SHA-256
   validation and manages the Surface, input, audio, settings, and process lifecycle.
+- **Controller rumble**: the game's `scePadSetVibration` calls are routed back to the physical
+  gamepad, driving its left and right motors separately (`GamepadRumble`). Works with Android 12+
+  HID/Native-mode pads (GameSir, DualSense, Xbox, 8BitDo…); Settings → Button mapping has a
+  *Test vibration* button.
 - The Android port reuses the desktop build's game runtime, PS4 system library reimplementation,
   graphics core, and patch logic. Resolution, FPS, and cheat patches are still awaiting byte-level
   validation on the Android build.

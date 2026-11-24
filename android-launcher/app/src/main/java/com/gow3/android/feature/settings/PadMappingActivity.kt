@@ -3,6 +3,7 @@ package com.gow3.android.feature.settings
 import com.gow3.android.R
 import com.gow3.android.core.settings.GamePrefs
 import com.gow3.android.core.settings.LanguageManager
+import com.gow3.android.game.GamepadRumble
 import com.gow3.android.game.PadMapping
 
 import android.app.Activity
@@ -171,11 +172,22 @@ class PadMappingActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             (layoutParams as LinearLayout.LayoutParams).setMargins(0, dp(8), 0, dp(84))
+            // 三颗按钮等分宽度：恢复默认 / 测试振动 / 完成（窄屏也不溢出）。
             addView(button(R.string.pad_mapping_restore) { restoreDefaults() },
-                LinearLayout.LayoutParams(dp(120), dp(40)).apply { marginEnd = dp(10) })
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(8) })
+            addView(button(R.string.pad_mapping_test_vibration) { testVibration() },
+                LinearLayout.LayoutParams(0, dp(40), 1f).apply { marginEnd = dp(8) })
             addView(button(R.string.pad_mapping_done) { finish() },
-                LinearLayout.LayoutParams(dp(120), dp(40)))
+                LinearLayout.LayoutParams(0, dp(40), 1f))
         }
+    }
+
+    /** 用和游戏内震动完全相同的 GamepadRumble 路径打一拍，验证手柄马达是否可用。 */
+    private fun testVibration() {
+        if (GamepadRumble.playTest(this, 220, 160, 700)) return
+        val message = if (android.os.Build.VERSION.SDK_INT >= 31)
+            R.string.pad_mapping_no_rumble else R.string.pad_mapping_rumble_needs_android12
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     private fun rounded(color: Int) = GradientDrawable().apply {

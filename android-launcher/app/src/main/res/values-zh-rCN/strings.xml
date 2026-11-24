@@ -156,6 +156,9 @@
     <string name="pad_mapping_hint_idle">点选一个游戏按钮，再按下手柄按键或扳机完成绑定。点此可取消。</string>
     <string name="pad_mapping_hint_capture">按下手柄按键或扳机…点此取消</string>
     <string name="pad_mapping_restore">恢复默认</string>
+    <string name="pad_mapping_test_vibration">测试振动</string>
+    <string name="pad_mapping_no_rumble">未找到支持振动的手柄。请切到 Native/HID 模式（不要用 G-Touch）后重试。</string>
+    <string name="pad_mapping_rumble_needs_android12">手柄振动需要 Android 12（API 31）或更新版本。</string>
     <string name="pad_mapping_done">完成</string>
     <string name="pad_mapping_restored">按键映射已恢复默认</string>
     <string name="pad_mapping_default_fmt">默认：%1$s</string>

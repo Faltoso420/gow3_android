@@ -468,11 +468,12 @@ static uint16_t scale_vibration(uint8_t strength, unsigned percent) {
 }
 
 /* 震动回程(Android):游戏进程内没有 SDL 手柄可开(current_gamepad 恒空),Java 侧 PadBridge
- * 持有真实设备。把按 vibration= 百分比缩放后的强度(0..255)写入 GOW3_PAD_RUMBLE_FILE,
+ * 持有真实设备。把按 vibration= 百分比缩放后的两路强度(0..255)写入 GOW3_PAD_RUMBLE_FILE,
  * 单行 "rumble <strong> <weak> <ms> <seq>",tmp+rename 原子替换;Java 以 40ms 轮询,
- * 行变化(首次或新心跳)才触发 InputDevice 振动,振幅取 max(strong, weak)。
- * 相同强度每 100ms 重写一次并递增 seq(即心跳,持续效果靠它维持);ms=300 覆盖到下一次写入;
- * 效果停止后 seq 不再变化,振动自然衰减,不会重放。vibration=0 或强度为 0 时不写。
+ * 行变化(首次或新心跳)才触发:左马达取 strong、右马达取 weak(单马达手柄取两者最大值)。
+ * 相同强度每 100ms 重写一次并递增 seq(即心跳,持续效果靠它维持);ms=300 覆盖到下一次写入。
+ * 游戏让两路归零时也发布一行(seq 照常递增),Java 读到即取消,不必等最后一个脉冲衰减;
+ * 之后的零请求被 100ms 去重挡住,不重复写文件。vibration=0 视为归零。
  * 桌面(SDL 手柄存在)不受影响:env 不设置时本函数直接返回。 */
 static void rumble_report(uint8_t strong, uint8_t weak, unsigned percent) {
     static const char *path;
@@ -480,10 +481,11 @@ static void rumble_report(uint8_t strong, uint8_t weak, unsigned percent) {
     static uint64_t last_us;
     static unsigned seq;
     if (!path) path=getenv("GOW3_PAD_RUMBLE_FILE");
-    if (!path || !path[0] || !percent) return;
-    const int s=(int)strong*(int)percent/100, w=(int)weak*(int)percent/100;
-    if (!s && !w) return;
+    if (!path || !path[0]) return;
+    const int s=percent ? (int)strong*(int)percent/100 : 0;
+    const int w=percent ? (int)weak*(int)percent/100 : 0;
     const uint64_t t=now_us();
+    if (s==0 && w==0 && last_s==0 && last_w==0) return; /* 已归零:停住,不刷心跳 */
     if (s==last_s && w==last_w && t-last_us<100000) return; /* 去重:相同强度 100ms */
     last_s=s; last_w=w; last_us=t;
     char tmp[512];
