@@ -63,21 +63,7 @@ jobs:
             platform-tools
             platforms;android-${{ env.ANDROID_PLATFORM }}
             build-tools;${{ env.ANDROID_BUILD_TOOLS }}
-
-      - name: Install NDK r29, CMake and SDK platform 37
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --install "ndk;29.0.14206865" "cmake;3.22.1" >/dev/null
-          # compileSdk 37 (AGP 9.3.3): instalarlo explicitamente evita depender
-          # del auto-download de Gradle. Si no estuviera en el canal, Gradle lo intenta igual.
-          sdkmanager --install "platforms;android-37" >/dev/null 2>&1 || \
-            echo "platforms;android-37 no disponible en sdkmanager; Gradle lo resolvera"
-          test -f "$sdk/ndk/29.0.14206865/build/cmake/android.toolchain.cmake"
-          echo "GOW3_NDK=$sdk/ndk/29.0.14206865" >> "$GITHUB_ENV"
-          echo "GOW3_ANDROID_SDK=$sdk" >> "$GITHUB_ENV"
+            ndk;29.0.14206865
 
       - name: Install native build tools
         run: |
@@ -102,6 +88,43 @@ jobs:
         shell: bash -el {0}
         run: bash ci/setup-deps.sh "$CONDA_PREFIX"
 
+      # Mismas variables que el workflow del upstream: build_bionic.sh busca los headers
+      # only-header (robin-map, VMA, magic_enum, Boost) en $GOW3_ARM64_HEADERS y Boost en
+      # GOW3_BOOST_DIR/GOW3_BOOST_HEADERS_DIR. Sin esto aborta con "No header-only packages".
+      - name: Configure build environment
+        shell: bash -el {0}
+        run: |
+          {
+            echo "GOW3_ARM64_HEADERS=$CONDA_PREFIX"
+            echo "GOW3_JOBS=$(nproc)"
+            echo "GOW3_BUILD_TOOLS=$ANDROID_BUILD_TOOLS"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify host header tree
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          share_dir="$CONDA_PREFIX/share/cmake"
+          cmake_dir="$CONDA_PREFIX/lib/cmake"
+          echo "== $cmake_dir =="
+          ls -1 "$cmake_dir"
+          echo "== $share_dir (tsl-robin-map / VulkanMemoryAllocator) =="
+          ls -1 "$share_dir" 2>/dev/null || true
+          [[ -d "$share_dir/tsl-robin-map" ]] || {
+            echo "ERROR: tsl-robin-map not found in $share_dir; run ci/setup-deps.sh" >&2
+            exit 1
+          }
+          boost_dir=$(compgen -G "$cmake_dir/Boost-*/BoostConfig.cmake" | head -1 | xargs dirname || true)
+          boost_headers_dir=$(compgen -G "$cmake_dir/boost_headers-*/boost_headers-config.cmake" | head -1 | xargs dirname || true)
+          if [[ -n $boost_dir ]]; then
+            echo "GOW3_BOOST_DIR=$boost_dir" >> "$GITHUB_ENV"
+            echo "GOW3_BOOST_HEADERS_DIR=${boost_headers_dir:-$boost_dir}" >> "$GITHUB_ENV"
+            echo "Boost CMake package: $boost_dir"
+          else
+            echo "ERROR: no Boost-*/BoostConfig.cmake in $cmake_dir" >&2
+            exit 1
+          fi
+
       - name: Fetch Steam libraries
         shell: bash
         run: |
@@ -114,7 +137,7 @@ jobs:
         shell: bash -el {0}
         run: |
           set -euo pipefail
-          tc="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          tc="$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64"
           echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
           ldd "$tc/bin/clang" | head -20 || true
           "$tc/bin/aarch64-linux-android30-clang" --version
