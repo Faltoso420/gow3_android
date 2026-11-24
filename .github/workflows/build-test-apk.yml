@@ -104,7 +104,11 @@ jobs:
 
       - name: Fetch Steam libraries
         shell: bash
-        run: bash tools/android/inputs/fetch_steam_libs.sh
+        run: |
+          # fetch_steam_libs.sh asume que .local-deps/android existe (en el CI del
+          # upstream lo restaura la cache); en un runner limpio hay que crearlo.
+          mkdir -p .local-deps/android
+          bash tools/android/inputs/fetch_steam_libs.sh
 
       - name: Build the Bionic runtime
         shell: bash -el {0}
