@@ -218,12 +218,18 @@ jobs:
           ok=0
           for attempt in 1 2 3; do
             args=(:app:assembleDebug)
-            (( attempt > 1 )) && args+=(--refresh-dependencies)
+            if (( attempt > 1 )); then args+=(--refresh-dependencies); fi
             if android-launcher/gradlew -p android-launcher "${args[@]}"; then
               ok=1
               break
             fi
             echo "Gradle assembleDebug failed (attempt $attempt/3); retrying" >&2
+            # foojay-resolver solo auto-instala JDKs; el CI ya usa Temurin 17 de setup-java.
+            # Si el Plugin Portal falla, quitarlo evita bloquear el build por un plugin inerte.
+            if grep -q 'foojay-resolver-convention' android-launcher/settings.gradle.kts; then
+              echo "Removing foojay-resolver-convention (unused in CI) and retrying" >&2
+              sed -i '/foojay-resolver-convention/d' android-launcher/settings.gradle.kts
+            fi
             rm -rf "$HOME/.gradle/caches/modules-2/metadata-"* || true
             sleep 20
           done
