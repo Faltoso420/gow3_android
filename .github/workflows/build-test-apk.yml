@@ -145,6 +145,31 @@ jobs:
           echo "Steam libraries could not be fetched; the debug APK will use the stub." >&2
           exit 0
 
+      - name: Vendor the missing dxbc submodule
+        shell: bash
+        run: |
+          set -euo pipefail
+          # ducvd89/bloodframe fija el submódulo PancakeTAS/dxbc en 78ab59a8, pero ese
+          # repositorio ya no existe (404) y un clon limpio no puede bajarlo. El port
+          # AlkaidLab/lsfg-vk-android-legacy vendoriza las mismas fuentes de dxbc
+          # (DXVK 2.6.2); se inyectan y se marca el submódulo como "no actualizar".
+          src=.local-deps/android/src/bloodframe
+          mkdir -p .local-deps/android/src
+          [[ -d $src/.git ]] || git clone -q https://github.com/ducvd89/bloodframe.git "$src"
+          git -C "$src" -c advice.detachedHead=false checkout -q \
+            c29027555cfa8c9fc73c20f03816230becb9f469
+          tmp=$(mktemp -d)
+          curl -fsSL \
+            "https://codeload.github.com/AlkaidLab/lsfg-vk-android-legacy/tar.gz/d35751e42ca44e11c46c7c33243faf7f88087081" \
+            -o "$tmp/src.tar.gz"
+          tar -xzf "$tmp/src.tar.gz" -C "$tmp"
+          rm -rf "$src/thirdparty/dxbc"
+          cp -a "$tmp"/lsfg-vk-android-legacy-*/thirdparty/dxbc "$src/thirdparty/dxbc"
+          git -C "$src" config submodule.thirdparty/dxbc.update none
+          test -f "$src/thirdparty/dxbc/CMakeLists.txt"
+          test -f "$src/thirdparty/dxbc/LICENSE.md"
+          echo "dxbc vendored: $(ls "$src/thirdparty/dxbc")"
+
       - name: Verify the NDK toolchain can link
         shell: bash -el {0}
         run: |
