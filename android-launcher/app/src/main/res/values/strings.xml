@@ -179,8 +179,11 @@
     <string name="pad_mapping_hint_capture">Press a pad button or trigger… tap here to cancel</string>
     <string name="pad_mapping_restore">Restore defaults</string>
     <string name="pad_mapping_test_vibration">Test vibration</string>
-    <string name="pad_mapping_no_rumble">No gamepad with vibration found. Use Native/HID mode (not G-Touch) and try again.</string>
-    <string name="pad_mapping_rumble_needs_android12">Controller vibration needs Android 12 (API 31) or newer.</string>
+    <string name="pad_mapping_rumble_sent">Test pulse: sent to the gamepad.</string>
+    <string name="pad_mapping_rumble_absent">Test pulse: NOT sent — Android does not see a gamepad with vibration motors.</string>
+    <string name="pad_mapping_diagnostics">Controller diagnostics</string>
+    <string name="pad_mapping_copy">Copy</string>
+    <string name="pad_mapping_copied">Diagnostics copied</string>
     <string name="pad_mapping_done">Done</string>
     <string name="pad_mapping_restored">Button mapping restored to defaults</string>
     <string name="pad_mapping_default_fmt">Default: %1$s</string>

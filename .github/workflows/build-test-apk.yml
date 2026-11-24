@@ -285,8 +285,9 @@ jobs:
               (se pierden los datos/saves de la app). Puede faltar si el runner no pudo bajar
               las librerias de Steam en ese intento.
 
-            Prueba: Ajustes -> Button mapping -> "Test vibration", o menu en juego ->
-            Controls -> "Test vibration".
+            Prueba: Ajustes -> Button mapping -> "Test vibration" (abre un diagnóstico con
+            los mandos y motores que ve Android), o menu en juego -> Controls ->
+            "Controller diagnostics". Copia el texto si no vibra.
           files: |
             out/apk/*.apk
             out/apk/*.sha256

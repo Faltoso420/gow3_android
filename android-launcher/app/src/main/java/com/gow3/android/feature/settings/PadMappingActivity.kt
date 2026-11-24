@@ -3,10 +3,11 @@ package com.gow3.android.feature.settings
 import com.gow3.android.R
 import com.gow3.android.core.settings.GamePrefs
 import com.gow3.android.core.settings.LanguageManager
-import com.gow3.android.game.GamepadRumble
+import com.gow3.android.game.ControllerDiagnostics
 import com.gow3.android.game.PadMapping
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
@@ -182,12 +183,36 @@ class PadMappingActivity : Activity() {
         }
     }
 
-    /** 用和游戏内震动完全相同的 GamepadRumble 路径打一拍，验证手柄马达是否可用。 */
+    /**
+     * 打一拍测试并显示设备诊断：Android 是否把该手柄暴露为 gamepad、每个手柄有多少马达、
+     * 以及游戏侧是否请求过振动。文本可复制，方便没有 adb 的玩家反馈。
+     */
     private fun testVibration() {
-        if (GamepadRumble.playTest(this, 220, 160, 700)) return
-        val message = if (android.os.Build.VERSION.SDK_INT >= 31)
-            R.string.pad_mapping_no_rumble else R.string.pad_mapping_rumble_needs_android12
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        val sent = ControllerDiagnostics.playTest(this)
+        val verdict = getString(
+            if (sent) R.string.pad_mapping_rumble_sent else R.string.pad_mapping_rumble_absent)
+        showDiagnostics(verdict + "\n\n" + ControllerDiagnostics.report(this, null))
+    }
+
+    private fun showDiagnostics(text: String) {
+        val view = ScrollView(this).apply {
+            addView(TextView(this@PadMappingActivity).apply {
+                this.text = text
+                textSize = 12f
+                setTextIsSelectable(true)
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pad_mapping_diagnostics)
+            .setView(view)
+            .setPositiveButton(R.string.pad_mapping_copy) { _, _ ->
+                val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("gow3", text))
+                Toast.makeText(this, R.string.pad_mapping_copied, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.pad_mapping_done, null)
+            .show()
     }
 
     private fun rounded(color: Int) = GradientDrawable().apply {

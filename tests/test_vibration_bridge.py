@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PAD = ROOT / "src/runtime_pad.c"
 PAD_BRIDGE = ROOT / "android-launcher/app/src/main/java/com/gow3/android/game/PadBridge.java"
 RUMBLE = ROOT / "android-launcher/app/src/main/java/com/gow3/android/game/GamepadRumble.java"
+DIAGNOSTICS = ROOT / "android-launcher/app/src/main/java/com/gow3/android/game/ControllerDiagnostics.java"
 GAME_ACTIVITY = ROOT / "android-launcher/app/src/main/java/com/gow3/android/game/GameActivity.java"
 MANIFEST = ROOT / "android-launcher/app/src/main/AndroidManifest.xml"
 RUN_BIONIC = ROOT / "tools/android/device/run-bionic.sh"
@@ -113,7 +114,28 @@ class GamepadRumbleContractTest(unittest.TestCase):
     def test_test_pulse_is_exposed_for_settings(self):
         """设置页/抽屉的「测试振动」按钮走同一条解析+驱动路径。"""
         self.assertIn("public static boolean playTest(Context context", read(RUMBLE))
-        self.assertIn("GamepadRumble.playTest(this, 220, 160, 700)", read(PAD_MAPPING_ACTIVITY))
+        self.assertIn("ControllerDiagnostics.playTest(this)", read(PAD_MAPPING_ACTIVITY))
+
+    def test_diagnostics_report_shows_pads_and_motors(self):
+        """没有 adb 也要能诊断：报告列出每个输入设备的 sources、马达数和游戏请求。"""
+        source = read(DIAGNOSTICS)
+        self.assertIn("getInputDeviceIds()", source)
+        self.assertIn("getVibratorManager()", source)
+        self.assertIn("motorIds.length", source)
+        self.assertIn("Game rumble requests", source)
+        self.assertIn("android-pad.rumble.stats", read(GAME_ACTIVITY))
+
+
+class RumbleStatsContractTest(unittest.TestCase):
+    """Native 侧记录 scePadSetVibration 是否被游戏调用（诊断 calls=0/&gt;0）。"""
+
+    def test_native_counts_calls_and_writes_stats_atomically(self):
+        source = read(RUNTIME_PAD)
+        self.assertIn("static unsigned rumble_calls;", source)
+        self.assertIn("++rumble_calls;", source)
+        self.assertIn('"%s.stats"', source)
+        self.assertIn("calls=%u\\nlast_strong=%d\\nlast_weak=%d\\npercent=%u\\n", source)
+        self.assertIn("t-last_us<500000", source)
 
 
 class PadBridgePollingContractTest(unittest.TestCase):

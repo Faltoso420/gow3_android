@@ -467,6 +467,35 @@ static uint16_t scale_vibration(uint8_t strength, unsigned percent) {
     return (uint16_t)(strength * 257u * percent / 100u);
 }
 
+/* Android 诊断:游戏侧是否真的调用 scePadSetVibration。每 500ms 最多写一次
+ * GOW3_PAD_RUMBLE_FILE.stats(原子替换),launcher 的 "Controller diagnostics" 读取它:
+ * calls=0 说明游戏没有请求振动(或游戏内选项关闭);calls>0 说明桥在工作,问题在
+ * 系统是否把马达暴露给 app。 */
+static unsigned rumble_calls;
+
+static void rumble_stats(int s, int w, unsigned percent) {
+    static const char *path;
+    static uint64_t last_us;
+    if (!path) {
+        const char *base=getenv("GOW3_PAD_RUMBLE_FILE");
+        if (!base || !base[0]) return;
+        static char file[520];
+        snprintf(file,sizeof file,"%s.stats",base);
+        path=file;
+    }
+    const uint64_t t=now_us();
+    if (t-last_us<500000) return;
+    last_us=t;
+    char tmp[560];
+    if (snprintf(tmp,sizeof tmp,"%s.tmp",path)>=(int)sizeof tmp) return;
+    FILE *f=fopen(tmp,"w");
+    if (!f) return;
+    fprintf(f,"calls=%u\nlast_strong=%d\nlast_weak=%d\npercent=%u\n",
+            rumble_calls,s,w,percent);
+    fclose(f);
+    rename(tmp,path);
+}
+
 /* 震动回程(Android):游戏进程内没有 SDL 手柄可开(current_gamepad 恒空),Java 侧 PadBridge
  * 持有真实设备。把按 vibration= 百分比缩放后的两路强度(0..255)写入 GOW3_PAD_RUMBLE_FILE,
  * 单行 "rumble <strong> <weak> <ms> <seq>",tmp+rename 原子替换;Java 以 40ms 轮询,
@@ -503,6 +532,8 @@ static ABI int32_t pad_vibration(int32_t handle, const uint8_t *param) {
     pthread_mutex_lock(&lock);
     SDL_Gamepad *g=current_gamepad();
     const unsigned percent=(unsigned)gow3gpu_vibration_percent();
+    ++rumble_calls;
+    rumble_stats(param[0],param[1],percent);
     if (g) SDL_RumbleGamepad(g,scale_vibration(param[0], percent),
                              scale_vibration(param[1], percent),1000);
     rumble_report(param[0],param[1],percent);

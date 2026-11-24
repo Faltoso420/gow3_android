@@ -145,6 +145,34 @@ public final class GameActivity extends Activity implements SaveDialogHost {
     private TextView text(String value, int size, int color) {
         TextView t=new TextView(this); t.setText(value); t.setTextSize(size); t.setTextColor(color); return t;
     }
+    /**
+     * 振动诊断：打一拍并列出 Android 实际看到的手柄/马达，以及游戏侧请求计数
+     * （runtime_pad.c 写 android-pad.rumble.stats）。文本可选中/复制，方便无 adb 反馈。
+     */
+    private void showControllerDiagnostics() {
+        boolean sent=pad.testRumble();
+        String report=(sent ? "Test pulse: sent to the gamepad.\n\n"
+                            : "Test pulse: NOT sent - Android does not see a gamepad with motors.\n\n")
+            + ControllerDiagnostics.report(this,new File(BASE,"android-pad.rumble.stats"));
+        TextView body=text(report,12,0xffe8e8e8);
+        body.setTextIsSelectable(true);
+        body.setPadding(dp(16),dp(8),dp(16),dp(8));
+        android.widget.ScrollView scroll=new android.widget.ScrollView(this);
+        scroll.addView(body);
+        new AlertDialog.Builder(this)
+            .setTitle("Controller diagnostics")
+            .setView(scroll)
+            .setPositiveButton("Copy",(d,w) -> {
+                android.content.ClipboardManager clipboard=
+                    getSystemService(android.content.ClipboardManager.class);
+                if (clipboard!=null) clipboard.setPrimaryClip(
+                    android.content.ClipData.newPlainText("gow3",report));
+                android.widget.Toast.makeText(this,"Diagnostics copied",
+                    android.widget.Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Close",null)
+            .show();
+    }
     private FrameLayout.LayoutParams frame(int width,int height,int gravity) {
         return new FrameLayout.LayoutParams(width,height,gravity);
     }
@@ -317,15 +345,11 @@ public final class GameActivity extends Activity implements SaveDialogHost {
         });
         // 「Swap Square/Triangle」行已删除(add-pad-button-mapping):该特例开关被完整的
         // 按键映射取代,需要修正印刷标签的玩家在设置 → 操作里自行绑定方块/三角。
-        // 振动自检：和游戏内震动走同一条 GamepadRumble 路径，用来确认手柄马达是否被 Android 暴露。
-        menuItem("ic_gamepad","Test vibration","Buzzes the connected gamepad",() -> {
+        // 振动自检：打一拍并显示 Android 实际看到的手柄/马达与游戏侧请求计数。
+        // 和游戏内震动走同一条 GamepadRumble 路径，文本可复制给支持排查。
+        menuItem("ic_gamepad","Controller diagnostics","Test pulse, pad modes and motors",() -> {
             closeDrawer();
-            if (!pad.testRumble())
-                android.widget.Toast.makeText(this,
-                    Build.VERSION.SDK_INT >= 31
-                        ? "No gamepad with vibration found. Use Native/HID mode (not G-Touch)."
-                        : "Controller vibration needs Android 12 or newer.",
-                    android.widget.Toast.LENGTH_LONG).show();
+            showControllerDiagnostics();
         });
         menuItem("ic_edit","Edit controller layout","Drag and resize the buttons",() -> {
             prefs.setControllerOverlayEnabled(true);

@@ -157,8 +157,11 @@
     <string name="pad_mapping_hint_capture">按下手柄按键或扳机…点此取消</string>
     <string name="pad_mapping_restore">恢复默认</string>
     <string name="pad_mapping_test_vibration">测试振动</string>
-    <string name="pad_mapping_no_rumble">未找到支持振动的手柄。请切到 Native/HID 模式（不要用 G-Touch）后重试。</string>
-    <string name="pad_mapping_rumble_needs_android12">手柄振动需要 Android 12（API 31）或更新版本。</string>
+    <string name="pad_mapping_rumble_sent">测试脉冲：已发送到手柄。</string>
+    <string name="pad_mapping_rumble_absent">测试脉冲：未发送——Android 没有看到带振动马达的手柄。</string>
+    <string name="pad_mapping_diagnostics">手柄诊断</string>
+    <string name="pad_mapping_copy">复制</string>
+    <string name="pad_mapping_copied">诊断信息已复制</string>
     <string name="pad_mapping_done">完成</string>
     <string name="pad_mapping_restored">按键映射已恢复默认</string>
     <string name="pad_mapping_default_fmt">默认：%1$s</string>

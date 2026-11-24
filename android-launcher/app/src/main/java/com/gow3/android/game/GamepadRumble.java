@@ -170,8 +170,10 @@ public final class GamepadRumble implements InputManager.InputDeviceListener {
                 Vibrator[] found = new Vibrator[ids.length];
                 int count = 0;
                 for (int id : ids) {
+                    // Si el sistema lista el motor, se usa: en algunas ROMs hasVibrator()
+                    // devuelve false para vibradores de InputDevice aunque existan.
                     Vibrator motor = manager.getVibrator(id);
-                    if (motor != null && motor.hasVibrator()) found[count++] = motor;
+                    if (motor != null) found[count++] = motor;
                 }
                 if (count > 0) return java.util.Arrays.copyOf(found, count);
             }
