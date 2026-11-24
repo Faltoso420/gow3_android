@@ -7,6 +7,11 @@
 # 静态 libc++ 出现在多个 DSO 里会让每个都有自己的 exception/RTTI/new 状态）。
 # 归因：本脚本是 Bloodborne-Android（BB）tools/android/build_bionic.sh 的 gow3 移植版。
 set -euo pipefail
+# conda-forge 编译器 activation 会导出宿主（x86_64）的编译/链接环境变量：
+# CFLAGS（-march=nocona，aarch64 clang 拒绝）、LIBRARY_PATH/CPATH（clang 会把
+# LIBRARY_PATH 转成 -L 指向 conda 宿主 sysroot，CMake 也会把这些记进隐式链接目录），
+# 导致 Android 交叉链接解析到 x86_64 宿主库（libm/libatomic/nativewindow）。必须清空。
+unset CFLAGS CPPFLAGS LDFLAGS CXXFLAGS LIBRARY_PATH CPATH C_INCLUDE_PATH CXX_INCLUDE_PATH
 cd -- "$(dirname -- "$0")/../.."
 out=out/bionic
 root=$PWD/.local-deps/android
@@ -81,12 +86,16 @@ if [[ -z $boost_headers_dir ]]; then
 fi
 [[ -n $boost_dir && -f $boost_dir/BoostConfig.cmake ]] || {
     echo "No Boost CMake package (set GOW3_BOOST_DIR or install Boost headers)" >&2; exit 1; }
+# conda 环境不能进 FIND_ROOT_PATH/PREFIX_PATH：它含 x86_64 宿主 lib/sysroot，
+# CMake find_library 会把 libm/libatomic 解析成宿主库。header-only 包
+# （robin-map/VMA/Boost）已通过下面显式 *_DIR 提供，无需搜索整个 conda 环境。
+# 注意：注释必须放在命令外，不能插在 cmake 多行参数中间（# 会截断后续参数）。
 if [[ ! -f $out/gpu/build.ninja ]]; then
     cmake -S gpu -B "$out/gpu" -G Ninja "${ndk_cmake[@]}" \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGOW3_PGO=off -DGOW3_LTO=OFF \
-        "-DCMAKE_FIND_ROOT_PATH=$prefix;$headers" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        "-DCMAKE_FIND_ROOT_PATH=$prefix" -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
         -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
-        -DCMAKE_PREFIX_PATH="$prefix;$headers" \
+        -DCMAKE_PREFIX_PATH="$prefix" \
         -Dtsl-robin-map_DIR="$headers/share/cmake/tsl-robin-map" \
         -DVulkanMemoryAllocator_DIR="$headers/share/cmake/VulkanMemoryAllocator" \
         -DBoost_DIR="$boost_dir" \
@@ -101,14 +110,17 @@ mkdir -p "$out/bin" "$out/lib"
 # bundle 的 14MB 同量级）。保留编译目录的未 strip 副本供调试。
 "$llvm/bin/llvm-strip" -o "$out/lib/libgow3cpu.so" "$out/fex/libgow3cpu.so"
 "$llvm/bin/llvm-strip" -o "$out/lib/libgow3gpu.so" "$out/gpu/libgow3gpu.so"
-# gow3gpu 在 Android 上不再链接 SDL（AHB present 路径移除）；但 gow3-probe 的 runtime_pad.c
-# 仍链接 SDL3（探测/关闭手柄），libSDL3.so 由依赖构建链产出，随 runtime 一起分发。
-if "$llvm/bin/llvm-readelf" -d "$out/gpu/libgow3gpu.so" | grep -q 'libSDL3'; then
-    cp -f "$prefix/lib/libSDL3.so" "$out/lib/"
-fi
-if "$llvm/bin/llvm-readelf" -d "$out/bin/gow3-probe" 2>/dev/null | grep -q 'libSDL3'; then
-    cp -f "$prefix/lib/libSDL3.so" "$out/lib/"
-fi
+# gow3gpu 不链接 SDL（AHB present 路径移除）；但 gow3-probe 链接 SDL3：游戏进程用 SDL 音频
+# 子系统（disk 驱动）把 PCM 写进 app 的 FIFO（run-bionic.sh 设 SDL_AUDIO_DRIVER=disk，
+# AudioBridge.java 消费），因此 libSDL3.so 是 payload 的必需项，无条件拷贝。
+# 早先这里按 `readelf | grep -q` 判定是否需要：set -o pipefail 下 grep -q 提前退出会让
+# readelf 收到 SIGPIPE，管道状态非零 → 误判为「不需要」而漏拷贝，直到打包阶段才炸。
+# 现在依赖关系是既定的（音频），直接拷贝 + 断言源文件存在，不再依赖 readelf 判定。
+[[ -f $prefix/lib/libSDL3.so ]] || {
+    echo "libSDL3.so missing in $prefix (SDL3 must be built by tools/android/build_bionic_deps.sh)" >&2
+    exit 1
+}
+cp -f "$prefix/lib/libSDL3.so" "$out/lib/"
 cp -f "$llvm/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$out/lib/"
 
 cc=("$llvm/bin/aarch64-linux-android$api-clang" -fuse-ld=lld)
