@@ -110,10 +110,27 @@ jobs:
           mkdir -p .local-deps/android
           bash tools/android/inputs/fetch_steam_libs.sh
 
+      - name: Verify the NDK toolchain can link
+        shell: bash -el {0}
+        run: |
+          set -euo pipefail
+          tc="$GOW3_NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+          ldd "$tc/bin/clang" | head -20 || true
+          "$tc/bin/aarch64-linux-android30-clang" --version
+          printf 'int main(void){return 0;}\n' > /tmp/t.c
+          "$tc/bin/aarch64-linux-android30-clang" /tmp/t.c -o /tmp/t
+          file /tmp/t
+
       - name: Build the Bionic runtime
         shell: bash -el {0}
         run: |
-          bash tools/android/build_bionic_deps.sh
+          if ! bash tools/android/build_bionic_deps.sh; then
+            echo "=== build_bionic_deps failed; ffmpeg configure log ==="
+            log=$(find . -path '*bld/ffmpeg/ffbuild/config.log' | head -1)
+            [ -n "$log" ] && tail -150 "$log" || true
+            exit 1
+          fi
           bash tools/android/build_bionic.sh
 
       - name: Build debug APK (side-by-side install, debug signature)
