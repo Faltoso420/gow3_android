@@ -80,6 +80,9 @@ jobs:
             .local-deps/android/m2
             .local-deps/android/maven
             .local-deps/android/steam-libs
+            .local-deps/android/bionic-prefix
+            .local-deps/android/bionic-build
+            out/bionic
             ~/.cache/ccache
             ~/.gradle/caches
           key: apk-${{ runner.os }}-${{ hashFiles('tools/android/**', 'cpu/**', 'gpu/CMakeLists.txt', 'gpu/third_party/**', 'ci/**') }}
@@ -206,9 +209,25 @@ jobs:
 
       - name: Build debug APK (side-by-side install, debug signature)
         shell: bash -el {0}
+        env:
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.http.connectionTimeout=60000
+            -Dorg.gradle.internal.http.socketTimeout=60000
         run: |
           bash tools/android/debug/stage_bionic_runtime.sh
-          android-launcher/gradlew -p android-launcher :app:assembleDebug
+          ok=0
+          for attempt in 1 2 3; do
+            args=(:app:assembleDebug)
+            (( attempt > 1 )) && args+=(--refresh-dependencies)
+            if android-launcher/gradlew -p android-launcher "${args[@]}"; then
+              ok=1
+              break
+            fi
+            echo "Gradle assembleDebug failed (attempt $attempt/3); retrying" >&2
+            rm -rf "$HOME/.gradle/caches/modules-2/metadata-"* || true
+            sleep 20
+          done
+          [ "$ok" = 1 ] || exit 1
           mkdir -p out/apk
           cp android-launcher/app/build/outputs/apk/debug/*.apk out/apk/GodOfWar3-debug.apk
           sha256sum out/apk/GodOfWar3-debug.apk > out/apk/GodOfWar3-debug.apk.sha256
@@ -218,8 +237,19 @@ jobs:
         # las exige, pero el APK debug (stub) ya cubre la prueba de vibracion.
         if: ${{ hashFiles('.local-deps/android/steam-libs/jars.txt') != '' }}
         shell: bash -el {0}
+        env:
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.http.connectionTimeout=60000
+            -Dorg.gradle.internal.http.socketTimeout=60000
         run: |
-          bash tools/android/apk/build_release_apk.sh
+          ok=0
+          for attempt in 1 2 3; do
+            if bash tools/android/apk/build_release_apk.sh; then ok=1; break; fi
+            echo "Release APK failed (attempt $attempt/3); retrying" >&2
+            rm -rf "$HOME/.gradle/caches/modules-2/metadata-"* || true
+            sleep 20
+          done
+          [ "$ok" = 1 ] || exit 1
           cp "out/release/God of War III-bionic-"*.apk out/apk/GodOfWar3-release-devkey.apk
           sha256sum out/apk/GodOfWar3-release-devkey.apk > out/apk/GodOfWar3-release-devkey.apk.sha256
           ls -lh out/apk
